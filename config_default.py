@@ -1,0 +1,12 @@
+configs={
+	'db':{
+		'host':'127.0.0.1',
+		'port':3306,
+		'user':'root',
+		'password':'77778888',
+		'db':'awesome'
+	},
+	'session':{
+		'secret':'AwEsOmE'
+	}
+}
