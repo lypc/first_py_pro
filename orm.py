@@ -1,11 +1,64 @@
 import logging; logging.basicConfig(level=logging.INFO)
 import asyncio,os,json,time
+import aiomysql
 
 def create_args_string(num):
     L = []
     for n in range(num):
         L.append('?')
     return ', '.join(L)
+
+def log(sql, args=()):
+    logging.info('SQL: %s' % sql)
+
+
+@asyncio.coroutine
+def create_pool(loop,**kw):
+	logging.info('create database connection pool')
+	global __pool
+	__pool=yield from aiomysql.create_pool(
+		host=kw.get('host','localhost'),
+		port=kw.get('port',3306),
+		user=kw['user'],
+		password=kw['password'],
+		db=kw['db'],
+		charset=kw.get('charset','utf8'),
+		autocommit=kw.get('autocommit', True),
+		maxsize=kw.get('maxsize', 10),
+		minsize=kw.get('minsize', 1),
+		loop=loop
+		)
+
+@asyncio.coroutine
+def select(sql,args,size=None):
+	log(sql,args)
+	global __pool
+	with(yield from __pool)as conn:
+		cur=yield from conn.cursor(aiomysql.DictCursor)
+		yield from cur.execute(sql.replace('?','%s'),args or ())
+		if size:
+			rs=yield from cur.fetchmany(size)
+		else:
+			rs=yield from cur.fetchall
+		yield from cur.close()
+		logging.info('rows return : %s' % len(rs))
+		return rs
+
+@asyncio.coroutine
+def execute(sql,args):
+	log(sql)
+	global __pool
+	with(yield from __pool)as conn:
+		try:
+			cur=yield from conn.cursor()
+			yield from cur.execute(sql.replace('?','%s'),args or ())
+			affected=cur.rowcount
+			yield from cur.close()
+		except BaseException as e:
+			raise
+		return affected
+
+
 
 class ModelMetaclass(type):
 	def __new__(cls,name,bases,attrs):
@@ -110,6 +163,32 @@ class Model(dict,metaclass=ModelMetaclass):
 		rs=yield from select(' '.join(sql), args)
 		return [cls(**r) for r in rs]
 
+	@asyncio.coroutine
+	def findNumber(cls,selectField,where=None,args=None):
+		sql = ['select %s _num_ from `%s`' % (selectField, cls.__table__)]
+		if where:
+			sql.append('where')
+			sql.append(where)
+		rs = yield from select(' '.join(sql), args, 1)
+		if len(rs) == 0:
+			return None
+		return rs[0]['_num_']
+
+	@asyncio.coroutine
+	def update(self):
+		args = list(map(self.getValue, self.__fields__))
+		args.append(self.getValue(self.__primary_key__))
+		rows = yield from execute(self.__update__, args)
+		if rows != 1:
+			logging.warn('failed to update by primary key: affected rows: %s' % rows)
+
+	@asyncio.coroutine
+	def remove(self):
+		args = [self.getValue(self.__primary_key__)]
+		rows = yield from execute(self.__delete__, args)
+		if rows != 1:
+			logging.warn('failed to remove by primary key: affected rows: %s' % rows)
+
 class Field(object):
 	def __init__(self,name,column_type,primary_key,default):
 		self.name=name
@@ -126,12 +205,12 @@ class StringField(Field):
 
 
 class IntegerField(Field):
-	def __init__(self, name=None, primary_key=False, default=None, ddl='numeric(18,0)'):
+	def __init__(self, name=None, primary_key=False, default=None, ddl='bigint'):
 		super().__init__(name, ddl, primary_key, default)
 
 
 class FloatField(Field):
-	def __init__(self, name=None, primary_key=False, default=None, ddl='numeric(18,8)'):
+	def __init__(self, name=None, primary_key=False, default=None, ddl='real'):
 		super().__init__(name, ddl, primary_key, default)
 
 
@@ -139,3 +218,6 @@ class TextField(Field):
 	def __init__(self, name=None, primary_key=False, default=None, ddl='Text'):
 		super().__init__(name, ddl, primary_key, default)
 
+class BooleanField(Field):
+	def __init__(self, name=None,  default=False, ddl='Boolean'):
+		super().__init__(name, ddl, False, default)
