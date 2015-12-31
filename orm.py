@@ -39,7 +39,7 @@ def select(sql,args,size=None):
 		if size:
 			rs=yield from cur.fetchmany(size)
 		else:
-			rs=yield from cur.fetchall
+			rs=yield from cur.fetchall()
 		yield from cur.close()
 		logging.info('rows return : %s' % len(rs))
 		return rs
@@ -137,6 +137,8 @@ class Model(dict,metaclass=ModelMetaclass):
 		if rows!=1:
 			logging.warn('failed to insert record: affected rows: %s' % rows)
 
+
+	@classmethod
 	@asyncio.coroutine
 	def findAll(cls,where=None,args=None,**kw):
 		sql=[cls.__select__]
@@ -163,6 +165,7 @@ class Model(dict,metaclass=ModelMetaclass):
 		rs=yield from select(' '.join(sql), args)
 		return [cls(**r) for r in rs]
 
+	@classmethod
 	@asyncio.coroutine
 	def findNumber(cls,selectField,where=None,args=None):
 		sql = ['select %s _num_ from `%s`' % (selectField, cls.__table__)]

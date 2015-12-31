@@ -1,10 +1,10 @@
 import logging; logging.basicConfig(level=logging.INFO)
-from models import User, Blog, Comment
 import asyncio,os,json,time,orm
 from datetime import datetime
 from coroweb import  add_routes, add_static
 from aiohttp import web
 
+from config import configs
 from jinja2 import Environment, FileSystemLoader
 
 def index(request):
@@ -111,15 +111,13 @@ def datetime_filter(t):
 
 @asyncio.coroutine
 def init(loop):
-	yield from orm.create_pool(loop, user='root', password='77778888', db='awesome')
+	yield from orm.create_pool(loop=loop, user='root', password='77778888', db='awesome')
 	app = web.Application(loop=loop, middlewares=[
-	logger_factory, response_factory
+		logger_factory, response_factory
 	])
 	init_jinja2(app, filters=dict(datetime=datetime_filter))
 	add_routes(app, 'handlers')
 	add_static(app)
-	u = User(name='Test', email='test@example.com', password='1234567890', image='about:blank')
-	yield from u.save()
 	srv=yield from loop.create_server(app.make_handler(),'127.0.0.1',9000)
 	logging.info('server started at http://127.0.0.1:9000')
 	return srv
